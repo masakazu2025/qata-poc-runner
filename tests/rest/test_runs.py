@@ -88,7 +88,7 @@ def held_runner(context: dict) -> TestClient:
 
 @given("1 回目だけ例外を出す偽の操作で立ち上げた runner", target_fixture="client")
 def fail_once_runner() -> TestClient:
-    return TestClient(create_app(FailOnceOperator()), raise_server_exceptions=False)
+    return TestClient(create_app(FailOnceOperator()))
 
 
 @when(
