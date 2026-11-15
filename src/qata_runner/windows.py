@@ -3,6 +3,8 @@
 命令ごとに、同じタイトルのウィンドウを閉じてからアプリを起動し直し（親の D16）、
 ウィンドウの大きさをそろえてから、ステップを順に実行する。
 ステップでつまずいたら、そこで止めて aborted を返す（残りのステップは返さない）。
+想定していない例外でも同じく止め、それまでのステップを付けて返す
+（code は internal_error）。
 """
 
 import base64
@@ -17,7 +19,7 @@ from datetime import datetime
 from PIL import Image, ImageGrab
 from pywinauto import Desktop, keyboard, mouse
 from pywinauto.application import WindowSpecification
-from pywinauto.findwindows import ElementNotFoundError
+from pywinauto.findwindows import ElementAmbiguousError, ElementNotFoundError
 from pywinauto.timings import TimeoutError as PywinautoTimeout
 
 from qata_runner.contracts.common_schema import Error, Timestamp
@@ -61,6 +63,21 @@ class StepFailed(Exception):
         self.error = Error(code=code, message=message)
 
 
+def _failure(e: Exception) -> Error:
+    """止めた理由。StepFailed でなければ、想定していない例外として中身を書く。"""
+    if isinstance(e, StepFailed):
+        return e.error
+    return Error(
+        code="internal_error",
+        message=f"想定していないエラーで止めた（{type(e).__name__}: {e}）",
+    )
+
+
+def _count(e: ElementAmbiguousError) -> str:
+    elements = getattr(e, "elements", None)
+    return f" {len(elements)} つ" if elements else "二つ以上"
+
+
 def to_send_keys(key: str) -> str:
     """契約のキー（1 文字か名前付きのキー）を、pywinauto の send_keys の書き方に。"""
     if key in NAMED_KEYS:
@@ -98,10 +115,11 @@ class WindowsOperator:
                 steps=steps,
             )
 
+        # 想定していない例外も捕まえる。止めた理由とそれまでのステップを返すため
         try:
             window = self._start(command)
-        except StepFailed as failed:
-            return finish(Status.aborted, [], failed.error)
+        except Exception as e:
+            return finish(Status.aborted, [], _failure(e))
 
         steps: list[StepResult] = []
         for index, step in enumerate(command.steps):
@@ -109,11 +127,10 @@ class WindowsOperator:
                 text = self._do(window, step.root)
                 time.sleep(self.settle)
                 screenshot = self._screenshot(window, command.screenshot.scope)
-            except StepFailed as failed:
-                steps.append(
-                    StepResult(index=index, status=Status1.error, error=failed.error)
-                )
-                return finish(Status.aborted, steps, failed.error)
+            except Exception as e:
+                error = _failure(e)
+                steps.append(StepResult(index=index, status=Status1.error, error=error))
+                return finish(Status.aborted, steps, error)
             steps.append(
                 StepResult(
                     index=index, status=Status1.ok, text=text, screenshot=screenshot
@@ -140,6 +157,12 @@ class WindowsOperator:
                 "window_not_found",
                 f"タイトルが「{title}」のウィンドウが"
                 f" {self.window_timeout:g} 秒で見つからない",
+            ) from e
+        except ElementAmbiguousError as e:
+            raise StepFailed(
+                "window_ambiguous",
+                f"タイトルが「{title}」のウィンドウが{_count(e)}あり、一つに決められない。"
+                "同じタイトルのウィンドウを閉じる",
             ) from e
 
         size = command.app.window.size
@@ -199,6 +222,12 @@ class WindowsOperator:
             raise StepFailed(
                 "element_not_found",
                 f"AutomationId が「{automation_id}」の要素が見つからない",
+            ) from e
+        except ElementAmbiguousError as e:
+            raise StepFailed(
+                "element_ambiguous",
+                f"AutomationId が「{automation_id}」の要素が{_count(e)}あり、"
+                "一つに決められない",
             ) from e
 
     def _screenshot(self, window: WindowSpecification, scope: Scope) -> Screenshot:
