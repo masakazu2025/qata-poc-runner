@@ -28,6 +28,7 @@ uv sync
 uv run pytest          # 生成した型と契約・POST /runs・本物の操作（電卓）・依存の向き（import-linter）
 uv run ruff check
 uv run ruff format --check
+uv run pyright         # 型（契約から生成した型は報告から外す）
 ```
 
 本物の操作のテスト（`tests/windows/windows.feature`）は、Windows の電卓を起動し、キーボードとマウスを数秒使います。走っている間は触らないでください。デスクトップのない所では、環境変数 `QATA_RUNNER_NO_DESKTOP=1` で飛ばします（CI はこれ）。

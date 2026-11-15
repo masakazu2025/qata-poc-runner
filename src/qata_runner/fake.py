@@ -10,6 +10,7 @@ from datetime import datetime
 
 from PIL import Image, ImageDraw
 
+from qata_runner.contracts.common_schema import Timestamp
 from qata_runner.contracts.runner_command_schema import (
     Key,
     ReadText,
@@ -54,8 +55,8 @@ class FakeOperator:
         return RunnerResult(
             run_id=command.run_id,
             status=Status.completed,
-            started_at=started_at,
-            finished_at=datetime.now().astimezone(),
+            started_at=Timestamp(started_at),
+            finished_at=Timestamp(datetime.now().astimezone()),
             steps=steps,
         )
 
