@@ -4,6 +4,16 @@
 
 ---
 
+## R5. 想定していない例外でも、それまでのステップを付けて aborted を返す
+
+- 決めた人：AI　レビュー：未（人のレビューは要らない。PoC が終わったときにまとめて振り返る、親の D25）
+- **二段で捕まえる。** `WindowsOperator.run` で、起動とステップのどこで出た例外も捕まえ、それまでのステップを付けて aborted を返す（ステップの途中なら、そのステップを error にする）。それでも漏れたもの（偽物を含む操作そのものが投げたもの）は、`rest.py` で捕まえて、ステップを空にした aborted を 200 で返す。どこまで進んだかは REST では分からないため、空にする。
+- **二つあるときは、名前の付いたコードにする。** 同じタイトルのウィンドウが二つ：`window_ambiguous`（ステップは空）。同じ AutomationId の要素が二つ：`element_ambiguous`（そのステップを error）。業務アプリではよく起き、人がすることが分かる（閉じる・辞書を直す）ので、`internal_error` とは分けた。pywinauto は待つ（`wait`）の中から `ElementAmbiguousError` を、待たずにそのまま投げる（コードを読んで確かめた）。
+- **ほかは `internal_error`。** message に例外の型と中身を入れる。名前は server の側（qata-server#17）とそろえる。コードは契約では自由な文字列なので、契約は変えていない。
+- **テスト。** `tests/windows/operator.feature` で、pywinauto（`Desktop`）・起動・キー・スクショを差し替え、画面なしで REST の入口から動かす。CI でも回る。差し替えは qata-runner#13 でも使う。止め方の確かめに共通の手順は `tests/conftest.py` に移した。
+
+---
+
 ## R4. 型の検査は pyright の standard で、契約から生成した型は報告から外す
 
 - 決めた人：AI　レビュー：未（人のレビューは要らない。PoC が終わったときにまとめて振り返る、親の D25）
@@ -24,7 +34,7 @@
 - スクショ（`window`）は、外枠ではなく DWM の見えている範囲で撮る。外枠には見えない縁（数ピクセル）があり、後ろの別のウィンドウが写り込むため。そのぶん、スクショの左上はタップの原点と数ピクセルずれる。
 - 操作のあと 0.3 秒待ってから撮る（画面の書き換えを待つ）。
 - キーは pywinauto の `send_keys` の書き方に変える。名前付きのキーは `{ENTER}` などに、`+ ^ % ~ ( ) { } [ ]` は `{}` で囲む。
-- つまずいたときの `error.code`：`launch_failed`・`window_not_found`・`window_size_mismatch`（ステップは空）、`key_failed`・`tap_failed`・`element_not_found`・`screenshot_failed`（そのステップを error にして止める）。
+- つまずいたときの `error.code`：`launch_failed`・`window_not_found`・`window_size_mismatch`（ステップは空）、`key_failed`・`tap_failed`・`element_not_found`・`screenshot_failed`（そのステップを error にして止める）。二つあるとき・想定していない例外のときは R5。
 - 実行のあと、ウィンドウは閉じずに残す。次の実行の始めに閉じる。人が最後の状態を見られるようにするため。
 - 関門：`tests/windows/windows.feature` で、REST の入口から本物の電卓を動かす（キー・タップ・すべての画面・三つの止まり方）。電卓は前に使ったモード（標準・関数電卓）で開くので、テストのタップの座標は UI Automation でボタンを探して決める。CI にはデスクトップがないので `QATA_RUNNER_NO_DESKTOP` で飛ばし、手元で回す。キーの書き換えは CI でも回す。
 - テストで共通の手順（応答・契約・completed）は `tests/conftest.py` に移した。
