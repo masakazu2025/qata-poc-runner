@@ -53,7 +53,17 @@ dev = [
     "datamodel-code-generator>=0.91.0",
     "httpx>=0.28.1",
     "import-linter>=2.16",
+    "pyright>=1.1.414",
     "pytest>=9.2.0",
     "pytest-bdd>=9.0.1",
     "ruff>=0.17.4",
 ]
+
+[tool.pyright]
+pythonVersion = "3.12"
+include = ["src", "tests", "scripts"]
+# 契約から生成した型は手で直さないので、誤りの報告からは外す。import されれば型は読まれるので、使い方の誤りは捕まる。
+exclude = ["src/qata_runner/contracts", "**/__pycache__", "**/.*"]
+typeCheckingMode = "standard"
+# pytest の pythonpath と同じ。テストが scripts と tests の直下を import するため。
+extraPaths = ["scripts", "tests"]

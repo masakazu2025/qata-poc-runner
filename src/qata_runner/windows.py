@@ -20,7 +20,7 @@ from pywinauto.application import WindowSpecification
 from pywinauto.findwindows import ElementNotFoundError
 from pywinauto.timings import TimeoutError as PywinautoTimeout
 
-from qata_runner.contracts.common_schema import Error
+from qata_runner.contracts.common_schema import Error, Timestamp
 from qata_runner.contracts.runner_command_schema import (
     Key,
     ReadText,
@@ -92,8 +92,8 @@ class WindowsOperator:
             return RunnerResult(
                 run_id=command.run_id,
                 status=status,
-                started_at=started_at,
-                finished_at=datetime.now().astimezone(),
+                started_at=Timestamp(started_at),
+                finished_at=Timestamp(datetime.now().astimezone()),
                 error=error,
                 steps=steps,
             )

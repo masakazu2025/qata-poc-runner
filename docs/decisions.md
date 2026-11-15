@@ -4,6 +4,15 @@
 
 ---
 
+## R4. 型の検査は pyright の standard で、契約から生成した型は報告から外す
+
+- 決めた人：AI　レビュー：未（人のレビューは要らない。PoC が終わったときにまとめて振り返る、親の D25）
+- 関門に `uv run pyright` を足した。設定は pyproject.toml の `[tool.pyright]`。対象は src・tests・scripts。server（S9）とそろえた。
+- モードは standard。strict は、型の付いていないライブラリ（pywinauto など）の扱いで誤りが多く出て、中身より抑えの記述が増えるため。困ったら上げる。
+- 契約から生成した型（`src/qata_runner/contracts`）は、ruff と同じく報告から外す。手で直さない生成物のため。外しても、import されれば型は読まれるので、使い方の誤りは捕まる（今回の日時の誤りもこれで見つかった）。
+- `extraPaths` は pytest の `pythonpath` と同じ（scripts・tests）。テストが直下のモジュールを import するため。
+- 結果の日時は、契約の型 `Timestamp` で包んで渡す。生の `datetime` でも pydantic が変換するので動きは同じだが、型が合わないため。
+
 ## R3. 本物の操作（pywinauto）
 
 - 決めた人：AI　レビュー：未（人のレビューは要らない。PoC が終わったときにまとめて振り返る、親の D25）
