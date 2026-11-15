@@ -7,6 +7,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from PIL import Image
 from pytest_bdd import given, parsers, scenarios, then, when
 from support import load_example, walk_to_parent
 
+from qata_runner.contracts.runner_command_schema import RunnerCommand
+from qata_runner.contracts.runner_result_schema import RunnerResult
 from qata_runner.fake import FakeOperator
 from qata_runner.rest import create_app
 
@@ -37,6 +40,103 @@ def fake_runner() -> TestClient:
 )
 def fake_runner_with_text(text: str) -> TestClient:
     return TestClient(create_app(FakeOperator(text)))
+
+
+class HeldOperator:
+    """始まったところで、進めてよいと言われるまで止まる偽の操作。同時に動いた数を数える。"""
+
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.proceed = threading.Event()
+        self.running = 0
+        self.max_running = 0
+        self._count = threading.Lock()
+        self._fake = FakeOperator()
+
+    def run(self, command: RunnerCommand) -> RunnerResult:
+        with self._count:
+            self.running += 1
+            self.max_running = max(self.max_running, self.running)
+        try:
+            self.started.set()
+            self.proceed.wait(timeout=10)
+            return self._fake.run(command)
+        finally:
+            with self._count:
+                self.running -= 1
+
+
+class FailOnceOperator:
+    """1 回目だけ、想定していない例外で止まる偽の操作。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self._fake = FakeOperator()
+
+    def run(self, command: RunnerCommand) -> RunnerResult:
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("偽の操作が止まった")
+        return self._fake.run(command)
+
+
+@given("止めておける偽の操作で立ち上げた runner", target_fixture="client")
+def held_runner(context: dict) -> TestClient:
+    context["operator"] = HeldOperator()
+    return TestClient(create_app(context["operator"]))
+
+
+@given("1 回目だけ例外を出す偽の操作で立ち上げた runner", target_fixture="client")
+def fail_once_runner() -> TestClient:
+    return TestClient(create_app(FailOnceOperator()), raise_server_exceptions=False)
+
+
+@when(
+    parsers.parse(
+        '契約の例 "{file_name}" の命令を送り、操作が始まったところで止めておく'
+    )
+)
+def send_and_hold(context: dict, client: TestClient, file_name: str) -> None:
+    context["command"] = load_example(file_name)
+    first: dict = {}
+
+    def send() -> None:
+        first["response"] = client.post("/runs", json=context["command"])
+
+    thread = threading.Thread(target=send)
+    thread.start()
+    context["first"] = first
+    context["thread"] = thread
+    assert context["operator"].started.wait(timeout=10), "操作が始まらない"
+
+
+@when("その間にもう一つ命令を送る")
+def send_while_running(context: dict, client: TestClient) -> None:
+    context["response"] = client.post("/runs", json=context["command"])
+
+
+@when("もう一度同じ命令を送る")
+def send_again(context: dict, client: TestClient) -> None:
+    context["response"] = client.post("/runs", json=context["command"])
+
+
+@then("止めておいた操作を進めると、1 つめの応答は 200")
+def release_first(context: dict) -> None:
+    context["operator"].proceed.set()
+    context["thread"].join(timeout=10)
+    response = context["first"]["response"]
+    assert response.status_code == 200, response.text
+
+
+@then("同時に動いた操作は 1 つだけ")
+def only_one_ran(context: dict) -> None:
+    assert context["operator"].max_running == 1
+
+
+@then("そのあとに送った命令は 200 で受ける")
+def accepted_after(context: dict, client: TestClient) -> None:
+    response = client.post("/runs", json=context["command"])
+    assert response.status_code == 200, response.text
 
 
 @given(parsers.parse('契約の例 "{file_name}" の命令'))

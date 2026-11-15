@@ -51,3 +51,4 @@ uv run qata-runner
 
 - `POST /runs`：本文は runner への命令（`runner-command.schema.json`）。実行が終わるまで待って、runner からの結果（`runner-result.schema.json`）を返す。
 - 命令が契約に合わなければ、422 で `{"code": "invalid_command", "message": ...}` を返す。
+- 実行は一度に一つだけ。実行中に次の命令が来たら、待たずに 409 で `{"code": "runner_busy", "message": ...}` を返す。
