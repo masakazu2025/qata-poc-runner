@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
-from qata_runner.contract_check import problems
+from qata_runner.contract_check import ensure_ready, problems
 from qata_runner.contracts.common_schema import Error, Timestamp
 from qata_runner.contracts.runner_command_schema import RunnerCommand
 from qata_runner.contracts.runner_result_schema import RunnerResult, Status
@@ -25,12 +25,13 @@ class Operator(Protocol):
 
 
 def create_app(operator: Operator) -> FastAPI:
+    ensure_ready()
     app = FastAPI(title="qata-runner")
     running = threading.Lock()
 
     @app.post("/runs")
     async def run(request: Request) -> Any:
-        # 命令は FastAPI で検証せず、親の契約（JSON Schema）で判定する
+        # 命令は FastAPI で検証せず、読む版の契約（JSON Schema）で判定する
         try:
             body = await request.json()
         except ValueError:
