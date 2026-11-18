@@ -1,4 +1,6 @@
-"""親の契約（JSON Schema）のうち、runner が使うものから pydantic の型を生成する。
+"""読む版の契約（JSON Schema）のうち、runner が使うものから pydantic の型を生成する。
+
+読む版の契約は、親の契約を qata-contracts/ に写したもの（scripts/sync_contracts.py）。
 
 使い方：uv run python scripts/generate_contracts.py
 
@@ -14,9 +16,8 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-# 親のリポジトリ。環境変数 QATA_PARENT_DIR で指せる。既定は隣に並べた ../qata/
-PARENT_DIR = Path(os.environ.get("QATA_PARENT_DIR") or REPO_ROOT.parent / "qata")
-CONTRACTS_DIR = PARENT_DIR / "contracts"
+# 読む版の契約。親のタグから写したもの。隣の ../qata/ は読まない
+CONTRACTS_DIR = REPO_ROOT / "qata-contracts"
 SCHEMAS_DIR = CONTRACTS_DIR / "schemas"
 GENERATED_DIR = REPO_ROOT / "src" / "qata_runner" / "contracts"
 
