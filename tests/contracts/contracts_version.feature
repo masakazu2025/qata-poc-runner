@@ -26,3 +26,33 @@
     前提 写しと同じ中身の、親のタグの tarball
     もし 写しの "VERSION" を書き換える
     ならば 写しとの違いに "VERSION" がある
+
+  シナリオアウトライン: 写しのファイルを足したり消したりすると、違いとして見つかる
+    前提 写しと同じ中身の、親のタグの tarball
+    もし 写しの "<ファイル>" を<する>
+    ならば 写しとの違いに "<ファイル>" がある
+
+    例:
+      | ファイル                   | する |
+      | schemas/extra.schema.json  | 足す |
+      | schemas/common.schema.json | 消す |
+
+  シナリオ: tarball からは contracts/ の中だけを写す
+    前提 一段目のフォルダに "README.md" と "contracts/VERSION" がある tarball
+    ならば 写すファイルは "VERSION" だけ
+
+  シナリオ: contracts/ のない tarball は写さない
+    前提 一段目のフォルダに "README.md" がある tarball
+    ならば 写すと、写しを残したまま失敗する
+
+  シナリオアウトライン: 命令の判定に使う契約が欠けていれば、立ち上げで落ちる
+    前提 写しの schemas から "<ファイル>" を除く
+    ならば runner の立ち上げが失敗する
+
+    例:
+      | ファイル                   |
+      | runner-command.schema.json |
+      | common.schema.json         |
+
+  シナリオ: 契約がそろっていれば、立ち上げは通る
+    ならば runner が立ち上がる

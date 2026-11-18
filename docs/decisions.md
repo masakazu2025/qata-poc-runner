@@ -9,7 +9,7 @@
 - 決めた人：AI　レビュー：未（人のレビューは要らない。形は親の D54 で決めたもの）
 - 形は親の [repos-and-contracts.md の「子の持ち方」](https://github.com/masakazu2025/qata/blob/main/.claude/rules/qata/repos-and-contracts.md#子の持ち方)のとおり。写す道具は `scripts/sync_contracts.py` の一つにまとめ、写す・`--check`（写しを手で直していないか）・`--warn-if-old`（親に新しい版があるか）を持たせた。どれも版とタグの扱いを共有するため。
 - **`--check` は、tarball の中身と写しを直に比べる。** 一時の場所に写してから比べるのと同じ結果で、手順が少ない。比べ方そのもの（違いを見つけること）は、写しから作った tarball でテストする。ネットにつながずに確かめるため。
-- **runner は動いている間も契約を読むので、`create_app` で契約を読み込んでおく（`contract_check.ensure_ready`）。** 写しが欠けていれば立ち上げで落ち、最初の命令が来てから気づくことがない。
+- **runner は動いている間も契約を読むので、`create_app` で、命令の判定に使う契約がそろっていることを確かめる（`contract_check.ensure_ready`）。** 命令の契約から `$ref` をたどり、指す先（`common` も）がすべて引けることまで見る。`$ref` の解決は判定のときまで遅れるので、読み込むだけでは、ファイルが一つ欠けても最初の命令が 500 になるまで気づけないため（reviewer の指摘）。
 - **版を比べるのは、`git ls-remote` の出力を引数に取る `newer_version`。** タグの `^{}`（注釈付きのタグの指す先）と、形の違うタグは読み飛ばす。
 
 ---

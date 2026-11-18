@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
-from sync_contracts import COPY_DIR, differences, newer_version
+from sync_contracts import COPY_DIR, contracts_in, differences, newer_version, write
+
+from qata_runner import contract_check
+from qata_runner.fake import FakeOperator
+from qata_runner.rest import create_app
 
 scenarios("contracts_version.feature")
 
@@ -63,3 +67,70 @@ def then_no_difference(tarball: bytes, copy_dir: Path) -> None:
 @then(parsers.parse('写しとの違いに "{name}" がある'))
 def then_difference(tarball: bytes, copy_dir: Path, name: str) -> None:
     assert name in differences(tarball, copy_dir)
+
+
+@when(parsers.parse('写しの "{name}" を足す'))
+def when_add(copy_dir: Path, name: str) -> None:
+    (copy_dir / name).write_text("{}", encoding="utf-8")
+
+
+@when(parsers.parse('写しの "{name}" を消す'))
+def when_remove(copy_dir: Path, name: str) -> None:
+    (copy_dir / name).unlink()
+
+
+def _tarball(names: list[str]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        for name in names:
+            data = b"x"
+            info = tarfile.TarInfo(f"qata-contracts-v0.0.0/{name}")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+@given(
+    parsers.re("一段目のフォルダに (?P<names>.+) がある tarball"),
+    target_fixture="tarball",
+)
+def given_tarball_with(names: str) -> bytes:
+    return _tarball([n.strip().strip('"') for n in names.split("と")])
+
+
+@then(parsers.parse('写すファイルは "{name}" だけ'))
+def then_only(tarball: bytes, name: str) -> None:
+    assert list(contracts_in(tarball)) == [name]
+
+
+@then("写すと、写しを残したまま失敗する")
+def then_write_fails(tarball: bytes, copy_dir: Path) -> None:
+    before = sorted(p.name for p in copy_dir.rglob("*"))
+    with pytest.raises(ValueError):
+        write(tarball, copy_dir)
+    assert sorted(p.name for p in copy_dir.rglob("*")) == before
+
+
+@pytest.fixture
+def schemas_dir(copy_dir: Path, monkeypatch: pytest.MonkeyPatch):
+    """命令の判定が、一時の場所に複製した写しを読むようにする。"""
+    monkeypatch.setattr(contract_check, "SCHEMAS_DIR", copy_dir / "schemas")
+    contract_check.clear_cache()
+    yield copy_dir / "schemas"
+    contract_check.clear_cache()
+
+
+@given(parsers.parse('写しの schemas から "{name}" を除く'))
+def given_schema_removed(schemas_dir: Path, name: str) -> None:
+    (schemas_dir / name).unlink()
+
+
+@then("runner の立ち上げが失敗する")
+def then_start_fails(schemas_dir: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        create_app(FakeOperator())
+
+
+@then("runner が立ち上がる")
+def then_starts(schemas_dir: Path) -> None:
+    create_app(FakeOperator())

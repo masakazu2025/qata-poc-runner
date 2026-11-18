@@ -63,10 +63,14 @@ def files_in(root: Path) -> dict[str, bytes]:
 
 
 def write(tarball: bytes, copy_dir: Path = COPY_DIR) -> None:
-    """写しを tarball の contracts/ の中身に置き換える。"""
+    """写しを tarball の contracts/ の中身に置き換える。
+
+    tarball を読めてから写しを消す。読めないときに写しが消えたままにならないように。
+    """
+    files = contracts_in(tarball)
     if copy_dir.exists():
         shutil.rmtree(copy_dir)
-    for name, data in contracts_in(tarball).items():
+    for name, data in files.items():
         path = copy_dir / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
