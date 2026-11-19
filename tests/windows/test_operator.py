@@ -150,7 +150,9 @@ def focus_breaks(desktop: FakeDesktop) -> None:
 
 @given("アプリを起動すると OSError が出る")
 def launch_breaks(desktop: FakeDesktop) -> None:
-    desktop.launch_error = FileNotFoundError(BROKEN)  # OSError の仲間
+    # 仲間（FileNotFoundError など）ではなく、素の OSError を投げる。exe として読めない
+    # ファイルを起動したときは素の OSError になるので、捕まえる範囲が狭まれば落ちる
+    desktop.launch_error = OSError(BROKEN)
 
 
 @given(parsers.parse('キー "{key}" を押すと例外が出る'))
