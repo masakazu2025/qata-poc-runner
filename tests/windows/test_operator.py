@@ -86,17 +86,24 @@ class FakeSpecification:
 
 class FakeOldWindow:
     """前の実行で開いたままのウィンドウ。closes が False なら、close しても残る
-    （「保存しますか」などの確認が出て閉じない）。"""
+    （「保存しますか」などの確認が出て閉じない）。
+    本物の UIA の close は閉じる要求を出すだけで、消えるのを待たずに戻る。
+    それに合わせて、close のあと、探されるのが delay 回目までは残っている。"""
 
-    def __init__(self, desktop: "FakeDesktop", closes: bool) -> None:
-        self.desktop = desktop
+    def __init__(self, closes: bool, delay: int = 2) -> None:
         self.closes = closes
-        self.close_called = False
+        self.delay = delay
+        self.closing = False
 
     def close(self) -> None:
-        self.close_called = True
-        if self.closes:
-            self.desktop.old_windows.remove(self)
+        self.closing = self.closes
+
+    def still_open(self) -> bool:
+        """探されたときに、まだあるか。閉じかけなら、探されるたびに残りを減らす。"""
+        if not self.closing:
+            return True
+        self.delay -= 1
+        return self.delay >= 0
 
 
 class FakeDesktop:
@@ -139,6 +146,7 @@ class FakeDesktop:
         return self.window_spec
 
     def windows(self, **criteria: object) -> list[FakeOldWindow]:
+        self.old_windows = [w for w in self.old_windows if w.still_open()]
         return list(self.old_windows)
 
 
@@ -162,12 +170,12 @@ def faked_runner(desktop: FakeDesktop) -> TestClient:
 
 @given("前の実行のウィンドウが、閉じようとしても閉じない")
 def window_stays_open(desktop: FakeDesktop) -> None:
-    desktop.old_windows.append(FakeOldWindow(desktop, closes=False))
+    desktop.old_windows.append(FakeOldWindow(closes=False))
 
 
-@given("前の実行のウィンドウが、閉じようとすると閉じる")
+@given("前の実行のウィンドウが、閉じようとすると少し遅れて閉じる")
 def window_closes(desktop: FakeDesktop) -> None:
-    desktop.old_windows.append(FakeOldWindow(desktop, closes=True))
+    desktop.old_windows.append(FakeOldWindow(closes=True))
 
 
 @given(parsers.parse('表示の要素の Name は "{name}"、中の文は "{text}"'))
@@ -247,8 +255,9 @@ def not_launched(desktop: FakeDesktop) -> None:
 
 @then("前の実行のウィンドウを閉じようとした")
 def tried_to_close(desktop: FakeDesktop) -> None:
-    # 閉じたウィンドウは一覧から消えるので、作ったときの数と比べずに、残りが空かを見る
+    # 閉じるのを待ってから起動したことを見る（待たずに進めば、まだ残っている）
     assert desktop.old_windows == []
+    assert desktop.launched
 
 
 @then(parsers.parse('ステップ {index:d} で読んだ文字は "{text}"'))
