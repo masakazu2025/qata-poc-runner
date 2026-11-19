@@ -34,11 +34,24 @@ class FakeRectangle:
         return self.bottom - self.top
 
 
+class FakeElementInfo:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
 class FakeWrapper:
     handle = 1
 
-    def __init__(self, text: str = "", focus_error: Exception | None = None) -> None:
-        self.text = text
+    def __init__(
+        self,
+        name: str = "",
+        text: str | None = None,
+        focus_error: Exception | None = None,
+    ) -> None:
+        # pywinauto の UIA では、Name は element_info.name、window_text は中の文
+        # （入力欄なら打ち込んだ文）。text がなければ、電卓の表示と同じく Name と同じ
+        self.element_info = FakeElementInfo(name)
+        self.text = name if text is None else text
         self.focus_error = focus_error
 
     def rectangle(self) -> FakeRectangle:
@@ -71,6 +84,21 @@ class FakeSpecification:
         return self.children[auto_id]
 
 
+class FakeOldWindow:
+    """前の実行で開いたままのウィンドウ。closes が False なら、close しても残る
+    （「保存しますか」などの確認が出て閉じない）。"""
+
+    def __init__(self, desktop: "FakeDesktop", closes: bool) -> None:
+        self.desktop = desktop
+        self.closes = closes
+        self.close_called = False
+
+    def close(self) -> None:
+        self.close_called = True
+        if self.closes:
+            self.desktop.old_windows.remove(self)
+
+
 class FakeDesktop:
     """Desktop の代わり。起動・キー・タップ・スクショで、例外を投げさせられる。"""
 
@@ -82,10 +110,13 @@ class FakeDesktop:
         self.tap_error: Exception | None = None
         self.failing_screenshot: int | None = None  # 何枚目のスクショで例外を投げるか
         self.screenshots = 0
+        self.old_windows: list[FakeOldWindow] = []  # 閉じる前のウィンドウ
+        self.launched = False
 
     def popen(self, command: str) -> None:
         if self.launch_error is not None:
             raise self.launch_error
+        self.launched = True
 
     def send_keys(self, keys: str, **options: object) -> None:
         if keys == self.failing_key:
@@ -107,8 +138,8 @@ class FakeDesktop:
     def window(self, **criteria: object) -> FakeSpecification:
         return self.window_spec
 
-    def windows(self, **criteria: object) -> list:
-        return []  # 閉じる前のウィンドウはない
+    def windows(self, **criteria: object) -> list[FakeOldWindow]:
+        return list(self.old_windows)
 
 
 @pytest.fixture
@@ -125,7 +156,23 @@ def desktop(monkeypatch: pytest.MonkeyPatch) -> FakeDesktop:
 
 @given("pywinauto を差し替えた本物の操作で立ち上げた runner", target_fixture="client")
 def faked_runner(desktop: FakeDesktop) -> TestClient:
-    return TestClient(create_app(WindowsOperator(settle=0)))
+    # 閉じるのを待つ時間は短くする（閉じないシナリオで 5 秒待たないため）
+    return TestClient(create_app(WindowsOperator(settle=0, close_timeout=0.3)))
+
+
+@given("前の実行のウィンドウが、閉じようとしても閉じない")
+def window_stays_open(desktop: FakeDesktop) -> None:
+    desktop.old_windows.append(FakeOldWindow(desktop, closes=False))
+
+
+@given("前の実行のウィンドウが、閉じようとすると閉じる")
+def window_closes(desktop: FakeDesktop) -> None:
+    desktop.old_windows.append(FakeOldWindow(desktop, closes=True))
+
+
+@given(parsers.parse('表示の要素の Name は "{name}"、中の文は "{text}"'))
+def name_differs_from_text(desktop: FakeDesktop, name: str, text: str) -> None:
+    desktop.window_spec.children[DISPLAY] = FakeSpecification(FakeWrapper(name, text))
 
 
 @given("同じタイトルのウィンドウが二つある")
@@ -191,6 +238,22 @@ def send_steps(context: dict, client: TestClient, words: str) -> None:
         "steps": steps,
     }
     context["response"] = client.post("/runs", json=context["command"])
+
+
+@then("アプリは起動していない")
+def not_launched(desktop: FakeDesktop) -> None:
+    assert not desktop.launched
+
+
+@then("前の実行のウィンドウを閉じようとした")
+def tried_to_close(desktop: FakeDesktop) -> None:
+    # 閉じたウィンドウは一覧から消えるので、作ったときの数と比べずに、残りが空かを見る
+    assert desktop.old_windows == []
+
+
+@then(parsers.parse('ステップ {index:d} で読んだ文字は "{text}"'))
+def read_text_is(context: dict, index: int, text: str) -> None:
+    assert context["response"].json()["steps"][index]["text"] == text
 
 
 @then("error の message に例外の中身が入っている")

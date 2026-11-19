@@ -1,6 +1,7 @@
 """本物の操作。pywinauto で Windows のアプリを動かし、結果とスクショを返す。
 
 命令ごとに、同じタイトルのウィンドウを閉じてからアプリを起動し直し（親の D16）、
+閉じなければ起動せずに止め（前の状態のまま動かさないため）、
 ウィンドウの大きさをそろえてから、ステップを順に実行する。
 ステップでつまずいたら、そこで止めて aborted を返す（残りのステップは返さない）。
 想定していない例外でも同じく止め、それまでのステップを付けて返す
@@ -93,12 +94,14 @@ class WindowsOperator:
         window_timeout: float = 15.0,
         element_timeout: float = 3.0,
         settle: float = 0.3,
+        close_timeout: float = 5.0,
     ) -> None:
         # 座標とスクショを物理ピクセルでそろえる（拡大率が 100% でない画面のため）
         _make_dpi_aware()
         self.window_timeout = window_timeout
         self.element_timeout = element_timeout
         self.settle = settle
+        self.close_timeout = close_timeout
 
     def run(self, command: RunnerCommand) -> RunnerResult:
         started_at = datetime.now().astimezone()
@@ -140,7 +143,7 @@ class WindowsOperator:
 
     def _start(self, command: RunnerCommand) -> WindowSpecification:
         title = command.app.window.title
-        _close_windows(title)
+        _close_windows(title, self.close_timeout)
         try:
             subprocess.Popen(command.app.launch.command)
         except OSError as e:
@@ -217,7 +220,8 @@ class WindowsOperator:
         element = window.child_window(auto_id=automation_id)
         try:
             element.wait("exists", timeout=self.element_timeout)
-            return element.wrapper_object().window_text()
+            # 契約どおり Name を読む。window_text は、入力欄では中の文を返すため
+            return element.wrapper_object().element_info.name
         except (PywinautoTimeout, ElementNotFoundError) as e:
             raise StepFailed(
                 "element_not_found",
@@ -251,17 +255,26 @@ def _guard(code: str, message: str, action: Callable[[], None]) -> None:
         raise StepFailed(code, f"{message}（{e}）") from e
 
 
-def _close_windows(title: str) -> None:
-    """前の実行の状態を持ち越さないように、同じタイトルのウィンドウを閉じる。"""
+def _close_windows(title: str, timeout: float) -> None:
+    """前の実行の状態を持ち越さないように、同じタイトルのウィンドウを閉じる。
+    決めた時間で閉じなければ止める。前のテストの続きの状態で次のテストを動かさないため。"""
     for window in Desktop(backend="uia").windows(title=title, control_type="Window"):
         try:
             window.close()
         except Exception:  # すでに閉じていれば、それでよい
             pass
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        if not Desktop(backend="uia").windows(title=title, control_type="Window"):
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = Desktop(backend="uia").windows(title=title, control_type="Window")
+        if not remaining:
             return
+        if time.monotonic() >= deadline:
+            raise StepFailed(
+                "window_not_closed",
+                f"前の実行のタイトルが「{title}」のウィンドウが"
+                f" {timeout:g} 秒で閉じない（{len(remaining)} つ残っている）。"
+                "「保存しますか」などの確認が出ていないかを確かめ、手で閉じる",
+            )
         time.sleep(0.2)
 
 

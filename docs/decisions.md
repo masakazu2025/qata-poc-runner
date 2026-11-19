@@ -4,6 +4,14 @@
 
 ---
 
+## R7. 前のウィンドウが閉じなければ止め、文字は Name を読む
+
+- 決めた人：AI　レビュー：未（人のレビューは要らない。待つ時間と code の名前はあとで変えてよい）
+- **前の実行のウィンドウが決めた時間（既定 5 秒、`WindowsOperator` の `close_timeout`）で閉じなければ、アプリを起動せずに `window_not_closed` で止める（ステップは空）。** 「保存しますか」などの確認が出て閉じないとき、前は何も言わずに先へ進み、前のテストの続きの状態で次のテストが動いていたため。確認に答えて閉じる（「保存しない」を押すなど）ことはしない。どのボタンが安全かはアプリによって違うため。message で、確認が出ていないかを確かめて手で閉じるよう伝える。
+- **read_text は `element_info.name`（UI Automation の Name）を読む。** 契約が Name を読むと決めているため。前に使っていた `window_text()` は、入力欄では Name ではなく中の文を返す。電卓の表示では二つが同じなので、本物の電卓のテストでは違いが見えない。違いは、差し替えた部品で確かめる。
+
+---
+
 ## R6. 読む契約の版を写して持ち、立ち上げたときにそろっていることを確かめる
 
 - 決めた人：AI　レビュー：未（人のレビューは要らない。形は親の D54 で決めたもの）
@@ -44,7 +52,7 @@
 - スクショ（`window`）は、外枠ではなく DWM の見えている範囲で撮る。外枠には見えない縁（数ピクセル）があり、後ろの別のウィンドウが写り込むため。そのぶん、スクショの左上はタップの原点と数ピクセルずれる。
 - 操作のあと 0.3 秒待ってから撮る（画面の書き換えを待つ）。
 - キーは pywinauto の `send_keys` の書き方に変える。名前付きのキーは `{ENTER}` などに、`+ ^ % ~ ( ) { } [ ]` は `{}` で囲む。
-- つまずいたときの `error.code`：`launch_failed`・`window_not_found`・`window_size_mismatch`（ステップは空）、`key_failed`・`tap_failed`・`element_not_found`・`screenshot_failed`（そのステップを error にして止める）。二つあるとき・想定していない例外のときは R5。
+- つまずいたときの `error.code`：`window_not_closed`（R7）・`launch_failed`・`window_not_found`・`window_size_mismatch`（ステップは空）、`key_failed`・`tap_failed`・`element_not_found`・`screenshot_failed`（そのステップを error にして止める）。二つあるとき・想定していない例外のときは R5。
 - 実行のあと、ウィンドウは閉じずに残す。次の実行の始めに閉じる。人が最後の状態を見られるようにするため。
 - 関門：`tests/windows/windows.feature` で、REST の入口から本物の電卓を動かす（キー・タップ・すべての画面・三つの止まり方）。電卓は前に使ったモード（標準・関数電卓）で開くので、テストのタップの座標は UI Automation でボタンを探して決める。CI にはデスクトップがないので `QATA_RUNNER_NO_DESKTOP` で飛ばし、手元で回す。キーの書き換えは CI でも回す。
 - テストで共通の手順（応答・契約・completed）は `tests/conftest.py` に移した。
