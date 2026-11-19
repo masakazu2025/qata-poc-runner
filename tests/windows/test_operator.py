@@ -72,9 +72,34 @@ class FakeSpecification:
 
 
 class FakeDesktop:
+    """Desktop の代わり。起動・キー・タップ・スクショで、例外を投げさせられる。"""
+
     def __init__(self) -> None:
         self.window_spec = FakeSpecification(FakeWrapper())
         self.window_spec.children[DISPLAY] = FakeSpecification(FakeWrapper("3"))
+        self.launch_error: Exception | None = None
+        self.failing_key: str | None = None  # この send_keys の書き方で例外を投げる
+        self.tap_error: Exception | None = None
+        self.failing_screenshot: int | None = None  # 何枚目のスクショで例外を投げるか
+        self.screenshots = 0
+
+    def popen(self, command: str) -> None:
+        if self.launch_error is not None:
+            raise self.launch_error
+
+    def send_keys(self, keys: str, **options: object) -> None:
+        if keys == self.failing_key:
+            raise RuntimeError(BROKEN)
+
+    def click(self, **options: object) -> None:
+        if self.tap_error is not None:
+            raise self.tap_error
+
+    def grab(self, **options: object) -> Image.Image:
+        self.screenshots += 1
+        if self.screenshots == self.failing_screenshot:
+            raise OSError(BROKEN)
+        return Image.new("RGB", (4, 4), "white")
 
     def __call__(self, backend: str) -> "FakeDesktop":
         return self
@@ -90,12 +115,11 @@ class FakeDesktop:
 def desktop(monkeypatch: pytest.MonkeyPatch) -> FakeDesktop:
     fake = FakeDesktop()
     monkeypatch.setattr(windows, "Desktop", fake)
-    monkeypatch.setattr(windows.subprocess, "Popen", lambda command: None)
-    monkeypatch.setattr(windows.keyboard, "send_keys", lambda *a, **k: None)
+    monkeypatch.setattr(windows.subprocess, "Popen", fake.popen)
+    monkeypatch.setattr(windows.keyboard, "send_keys", fake.send_keys)
+    monkeypatch.setattr(windows.mouse, "click", fake.click)
     monkeypatch.setattr(windows, "_visible_bounds", lambda handle: (0, 0, 4, 4))
-    monkeypatch.setattr(
-        windows.ImageGrab, "grab", lambda **k: Image.new("RGB", (4, 4), "white")
-    )
+    monkeypatch.setattr(windows.ImageGrab, "grab", fake.grab)
     return fake
 
 
@@ -124,14 +148,42 @@ def focus_breaks(desktop: FakeDesktop) -> None:
     desktop.window_spec.wrapper.focus_error = RuntimeError(BROKEN)
 
 
+@given("アプリを起動すると OSError が出る")
+def launch_breaks(desktop: FakeDesktop) -> None:
+    # 仲間（FileNotFoundError など）ではなく、素の OSError を投げる。exe として読めない
+    # ファイルを起動したときは素の OSError になるので、捕まえる範囲が狭まれば落ちる
+    desktop.launch_error = OSError(BROKEN)
+
+
+@given(parsers.parse('キー "{key}" を押すと例外が出る'))
+def key_breaks(desktop: FakeDesktop, key: str) -> None:
+    desktop.failing_key = key
+
+
+@given("タップすると例外が出る")
+def tap_breaks(desktop: FakeDesktop) -> None:
+    desktop.tap_error = RuntimeError(BROKEN)
+
+
+@given(parsers.parse("{count:d} 枚目のスクショを撮ると例外が出る"))
+def screenshot_breaks(desktop: FakeDesktop, count: int) -> None:
+    desktop.failing_screenshot = count
+
+
+def _step(word: str) -> dict:
+    if word == "表示を読む":
+        return {
+            "type": "read_text",
+            "source": {"method": "uia", "automation_id": DISPLAY},
+        }
+    if word == "タップ":
+        return {"type": "tap", "point": {"x": 10, "y": 20}}
+    return {"type": "key", "key": word}
+
+
 @when(parsers.parse('ステップを "{words}" にして送る'))
 def send_steps(context: dict, client: TestClient, words: str) -> None:
-    steps = [
-        {"type": "read_text", "source": {"method": "uia", "automation_id": DISPLAY}}
-        if word == "表示を読む"
-        else {"type": "key", "key": word}
-        for word in words.split(" ")
-    ]
+    steps = [_step(word) for word in words.split(" ")]
     context["command"] = {
         "run_id": "run_test",
         "app": {"launch": {"command": "practice.exe"}, "window": {"title": TITLE}},
@@ -145,4 +197,5 @@ def send_steps(context: dict, client: TestClient, words: str) -> None:
 def message_has_exception(context: dict) -> None:
     result = context["response"].json()
     assert BROKEN in result["error"]["message"]
-    assert result["steps"][-1]["error"] == result["error"]
+    if result["steps"]:  # 止めたステップにも、同じ理由が付いている
+        assert result["steps"][-1]["error"] == result["error"]

@@ -20,7 +20,7 @@
 - **二段で捕まえる。** `WindowsOperator.run` で、起動とステップのどこで出た例外も捕まえ、それまでのステップを付けて aborted を返す（ステップの途中なら、そのステップを error にする）。それでも漏れたもの（偽物を含む操作そのものが投げたもの）は、`rest.py` で捕まえて、ステップを空にした aborted を 200 で返す。どこまで進んだかは REST では分からないため、空にする。
 - **二つあるときは、名前の付いたコードにする。** 同じタイトルのウィンドウが二つ：`window_ambiguous`（ステップは空）。同じ AutomationId の要素が二つ：`element_ambiguous`（そのステップを error）。業務アプリではよく起き、人がすることが分かる（閉じる・辞書を直す）ので、`internal_error` とは分けた。pywinauto は待つ（`wait`）の中から `ElementAmbiguousError` を、待たずにそのまま投げる（コードを読んで確かめた）。
 - **ほかは `internal_error`。** message に例外の型と中身を入れる。名前は server の側（qata-server#17）とそろえる。コードは契約では自由な文字列なので、契約は変えていない。
-- **テスト。** `tests/windows/operator.feature` で、pywinauto（`Desktop`）・起動・キー・スクショを差し替え、画面なしで REST の入口から動かす。CI でも回る。差し替えは qata-runner#13 でも使う。止め方の確かめに共通の手順は `tests/conftest.py` に移した。
+- **テスト。** `tests/windows/operator.feature` で、pywinauto（`Desktop`）・起動・キー・タップ・スクショを差し替え、画面なしで REST の入口から動かす。CI でも回る。qata-runner#13 で、起動・キー・タップ・スクショの失敗（`launch_failed`・`key_failed`・`tap_failed`・`screenshot_failed`）のシナリオを足した。キー・タップ・スクショは二つ目のステップで失敗させ、一つ目が ok のまま残ることも見る。止め方の確かめに共通の手順は `tests/conftest.py` に移した。
 
 ---
 
